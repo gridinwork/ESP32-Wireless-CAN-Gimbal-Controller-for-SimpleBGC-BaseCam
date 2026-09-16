@@ -55,8 +55,6 @@ The reference system uses three CAN-connected gimbal motors. Each motor driver r
 
 Use twisted-pair wiring for CAN_H and CAN_L and verify the required CAN termination for the final topology.
 
-![Reference CAN motor installation](https://content.instructables.com/FM5/MOML/LZCPU6LL/FM5MOMLLZCPU6LL.jpg)
-
 ### CAN driver firmware
 
 Power the CAN driver modules and connect them to BaseCam. In SimpleBGC32 GUI open **Upgrade → Connected Modules**, refresh the device list and verify each module.
@@ -87,8 +85,6 @@ Reference pin map:
 
 UART is cross-connected: ESP32 RX → BaseCam TX and ESP32 TX → BaseCam RX.
 
-![ESP32-S3 and joystick reference wiring](https://content.instructables.com/F5I/UCSY/LZCPU6GV/F5IUCSYLZCPU6GV.jpg)
-
 ### Operating principle
 
 After startup, the ESP32 establishes serial communication with BaseCam, continuously reads the three analog joystick channels, converts them into Roll/Pitch/Yaw commands and sends the control values through the BaseCam Serial API. The modified source code will be published later.
@@ -106,8 +102,6 @@ Data path:
 `Joysticks → Controller ESP32-S3 → BLE → Gimbal ESP32-S3 → UART / Serial API → BaseCam → CAN → Motor Drivers`
 
 The BaseCam/CAN side remains essentially the same as in the direct version; only the joystick inputs move to the remote ESP32.
-
-![BaseCam controller reference installation](https://content.instructables.com/FML/2Q7Y/LZCPU6DU/FML2Q7YLZCPU6DU.jpg)
 
 ---
 
