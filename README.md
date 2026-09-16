@@ -1,145 +1,79 @@
 # ESP32 Wireless CAN Gimbal Controller for SimpleBGC / BaseCam
 
-ESP32-S3 wired and BLE control system for a 3-axis SimpleBGC/BaseCam camera gimbal with CAN motor drivers. This repository documents the system architecture, controller setup, CAN motor preparation, wiring, operating modes and further development by GEC Engineering.
+ESP32-S3 wired and BLE control system for a 3-axis SimpleBGC/BaseCam camera gimbal with CAN motor drivers. The project covers controller setup, CAN motor preparation, wiring and operating modes.
 
-> **Project status:** hardware and documentation integration. Firmware source code is intentionally not published yet; it will be added only after modification, review and testing.
+> **Firmware source code is intentionally not published yet.** It will be added after modification, review and testing.
 
-[Русская версия](README_RU.md)
+[Русская версия](README_RU.md) · [Attribution](ATTRIBUTION.md)
 
 ---
 
 ## 1. Project overview
 
-The purpose of this project is to provide external control of a three-axis camera gimbal through an ESP32-S3 while retaining the stabilization and motor-control capabilities of a SimpleBGC/BaseCam controller.
+The system uses ESP32-S3 as an external controller for a SimpleBGC/BaseCam three-axis gimbal. Three joystick channels control Roll, Pitch and Yaw. Commands are sent to BaseCam through the Serial API, while BaseCam handles stabilization and CAN motor control.
 
-The ESP32 can process three independent joystick channels for **Roll**, **Pitch** and **Yaw** and send the resulting commands to the BaseCam controller through its Serial API. The BaseCam controller then manages the gimbal axes and CAN-connected motor drivers.
+Two configurations are supported: a direct wired version with one ESP32-S3 and a wireless BLE version with two ESP32-S3 boards.
 
-Two configurations are considered:
-
-1. **Direct wired control** — one ESP32-S3 reads all three joystick channels and communicates directly with the BaseCam controller over UART.
-2. **Wireless BLE control** — one ESP32-S3 acts as the handheld joystick controller and sends commands over Bluetooth Low Energy to a second ESP32-S3 mounted on the gimbal. The second ESP32 communicates with BaseCam over UART.
-
-The original ESP32 software concept was based on the MIT-licensed work by Austin Allen / Elation Sports Technologies. See [Attribution](ATTRIBUTION.md).
+![Reference ESP32 and BaseCam gimbal-control system](https://content.instructables.com/FN8/KDHB/LZH05JMA/FN8KDHBLZH05JMA.jpg)
 
 ---
 
-## 2. Main system components
+## 2. SimpleBGC GUI setup before installing the gimbal motors
 
-- SimpleBGC/BaseCam 32-bit gimbal controller
-- ESP32-S3 development board — 1 board for direct control or 2 boards for BLE control
-- Three single-axis joystick modules
-- Three-axis gimbal mechanics
-- Three CAN motor drivers / CAN-enabled gimbal motors
-- Main motor power supply suitable for the selected drivers and motors
-- USB connection for SimpleBGC GUI configuration
-- UART connection between ESP32-S3 and BaseCam
-- CAN_H / CAN_L bus between BaseCam and the motor drivers
+Connect the BaseCam controller to the computer by USB, start SimpleBGC32 GUI, select the controller COM port and press **Connect**. Verify communication before changing any parameters.
 
-Always verify the voltage limits, polarity and pinout of the actual hardware before applying power.
+### Firmware / GUI update
 
----
+Open **Upgrade / Firmware Upgrade** and verify that the controller firmware and GUI version are compatible with the board revision. Do not interrupt USB or power during an update.
 
-## 3. SimpleBGC GUI setup before installing the gimbal motors
+![SimpleBGC firmware upgrade page](https://content.instructables.com/FX9/KS0T/LXRK8FSE/FX9KS0TLXRK8FSE.png)
 
-### 3.1 Install and connect SimpleBGC GUI
+### Serial API input
 
-Download the appropriate SimpleBGC32 GUI version from the official BaseCam Electronics website. Connect the BaseCam controller to the computer by USB, start the GUI, select the controller COM port and press **Connect**.
+Open **RC Settings → Input Configuration** and configure the input used for ESP32 communication as **Serial port (Serial API, etc.)**. In the reference configuration, `RC_ROLL` is assigned to the Serial API.
 
-After connection, confirm that the controller parameters can be read correctly before changing the configuration.
+### Main IMU
 
-Official downloads: https://www.basecamelectronics.com/downloads/
+Open **Hardware → Main IMU Sensor**. Configure the sensor arrangement according to the actual controller. On boards with a suitable onboard IMU, it may be used as a fallback if the main IMU is not detected.
 
-### 3.2 Check controller and GUI firmware
+![SimpleBGC Main IMU configuration](https://hackster.imgix.net/uploads/attachments/1747324/main_imu_sensor_-_red_gbJ5YyKhgr.png)
 
-Open the **Upgrade / Firmware Upgrade** section and verify that the controller firmware and GUI version are compatible with the hardware being used. Update them when required for the selected BaseCam controller and CAN modules.
+### Serial speed and calibration
 
-Do not interrupt power or USB communication while firmware is being written.
-
-### 3.3 Configure the serial control input
-
-Open:
-
-**RC Settings → Input Configuration**
-
-Configure the input used for ESP32 communication so the controller accepts commands from the **Serial API**. In the reference configuration, `RC_ROLL` is assigned to **Serial port (Serial API, etc.)**.
-
-### 3.4 Main IMU selection
-
-Open:
-
-**Hardware → Main IMU Sensor**
-
-For a controller with an onboard IMU, the onboard sensor can be enabled as a fallback when the main external IMU is not detected. Boards without an onboard IMU should be configured according to their actual sensor arrangement.
-
-### 3.5 Serial communication speed
-
-In the **Hardware** tab, locate the serial connection settings and configure:
-
-- Main serial port speed: **115200 baud**
-- RC_SERIAL port speed: **115200 baud**
-
-The ESP32 UART configuration must use the same communication speed.
-
-### 3.6 IMU calibration
-
-Before final motor installation, calibrate the IMU according to the BaseCam procedure. Place the controller or IMU on a stable surface, calibrate one orientation, then repeat for additional axes/orientations. Multiple correctly calibrated positions improve orientation accuracy.
-
-After changing settings, write/save the configuration to the controller and verify that it remains after reconnecting the GUI.
+Set both the main serial port and `RC_SERIAL` to **115200 baud**. The ESP32 UART must use the same speed. Calibrate the IMU in multiple stable orientations and save the configuration to the controller.
 
 ---
 
-## 4. CAN motor and driver preparation
+## 3. CAN motors and driver preparation
 
-The CAN motor drivers must be correctly prepared before the complete gimbal is powered and commissioned.
+The reference system uses three CAN-connected gimbal motors. Each motor driver requires the correct power supply, CAN_H/CAN_L connection and a unique CAN ID.
 
-### 4.1 CAN network
+- `CAN_H` BaseCam → `CANH` of all motor drivers
+- `CAN_L` BaseCam → `CANL` of all motor drivers
+- Supply positive → driver VCC / power input
+- Supply negative → driver GND
 
-The BaseCam controller communicates with the motor drivers over a differential CAN bus:
+Use twisted-pair wiring for CAN_H and CAN_L and verify the required CAN termination for the final topology.
 
-- `CAN_H` → `CANH` of all CAN motor drivers
-- `CAN_L` → `CANL` of all CAN motor drivers
-- motor-driver power positive → appropriate DC supply positive
-- motor-driver GND → power supply ground
+![Reference CAN motor installation](https://content.instructables.com/FM5/MOML/LZCPU6LL/FM5MOMLLZCPU6LL.jpg)
 
-Use a twisted pair for `CAN_H` and `CAN_L` where practical. Keep the wiring organized and verify CAN termination requirements for the actual hardware topology.
+### CAN driver firmware
 
-Each motor/driver must have the correct CAN address/ID for its role in the system. Do not power the system until duplicate or incorrect IDs have been resolved.
+Power the CAN driver modules and connect them to BaseCam. In SimpleBGC32 GUI open **Upgrade → Connected Modules**, refresh the device list and verify each module.
 
-### 4.2 CAN driver firmware update
+![Detected CAN modules in SimpleBGC GUI](https://hackster.imgix.net/uploads/attachments/1747339/can_modules_scan_devices_markup_MBQV1EI2MD.png)
 
-For BaseCam CAN_DRV modules, connect the modules to the main controller over CAN and provide the required main power supply. CAN_DRV modules are not powered from USB alone.
-
-In SimpleBGC32 GUI:
-
-1. Turn the motors OFF.
-2. Open **Upgrade → Connected modules**.
-3. Press **Refresh** and confirm that the required CAN module appears.
-4. Select the module and check its hardware, firmware and bootloader information.
-5. Select the firmware file intended for that exact hardware revision.
-6. Press **Flash** and wait until the operation finishes.
-7. Restart/reconnect the controller.
-8. Return to **Connected modules**, refresh the list and verify the new firmware version.
-
-**Important:** flashing firmware intended for different hardware can make a CAN module unusable. Always identify the exact driver revision before flashing.
-
-Official BaseCam CAN Driver information: https://www.basecamelectronics.com/can_driver/
-
-### 4.3 Motor parameters
-
-After the drivers are detected, configure the motor-specific parameters required by the selected hardware, including motor pole count, encoder configuration and motor electrical parameters where applicable. The reference hardware used 28-pole motors, but this value must not be copied blindly to a different motor.
-
-Perform resistance/inductance and encoder calibration only according to the requirements of the actual motor/driver combination.
+Select the correct firmware for the exact hardware revision, flash each module separately, reconnect the system and verify the reported firmware version. Configure motor pole count, encoder settings and electrical parameters for the actual motors. The reference DM5005 hardware uses 28 poles; do not copy this value to a different motor without verification.
 
 ---
 
-## 5. Direct ESP32-S3 connection — one ESP32
+## 4. Direct connection — one ESP32-S3
 
-In the direct configuration, a single ESP32-S3 performs two jobs:
+A single ESP32-S3 reads the Roll, Pitch and Yaw joystick inputs and sends processed commands to BaseCam through UART / Serial API.
 
-- reads the Roll, Pitch and Yaw joystick inputs using ADC-capable GPIO pins;
-- sends processed gimbal commands to the BaseCam controller through UART and the BaseCam Serial API.
+![Direct ESP32-S3 to BaseCam wiring](https://content.instructables.com/FXC/8LE9/LZCPU8J9/FXC8LE9LZCPU8J9.png)
 
-Reference signal mapping used by the original implementation:
+Reference pin map:
 
 | Function | ESP32-S3 | Destination |
 |---|---|---|
@@ -148,98 +82,55 @@ Reference signal mapping used by the original implementation:
 | Joystick 3 signal | GPIO15 | Joystick SIG |
 | UART RX | GPIO18 | BaseCam UART1_TX |
 | UART TX | GPIO17 | BaseCam UART1_RX |
-| Joystick supply | 3V3 | All joystick VCC |
+| Joystick supply | 3V3 | Joystick VCC |
 | Ground | GND | Joysticks + BaseCam GND |
 
-UART is cross-connected: ESP32 RX connects to BaseCam TX and ESP32 TX connects to BaseCam RX.
+UART is cross-connected: ESP32 RX → BaseCam TX and ESP32 TX → BaseCam RX.
 
-The exact GPIO mapping will be reviewed when the modified GEC Engineering firmware is prepared. Therefore this table currently documents the reference hardware arrangement rather than defining a permanent firmware pinout.
+![ESP32-S3 and joystick reference wiring](https://content.instructables.com/F5I/UCSY/LZCPU6GV/F5IUCSYLZCPU6GV.jpg)
 
-### Direct-control operating principle
+### Operating principle
 
-After startup, the ESP32 establishes serial communication with the BaseCam controller. It continuously samples the three joystick channels, converts the raw ADC readings into Roll/Pitch/Yaw commands, applies the selected operating mode and transmits the resulting control values through the BaseCam Serial API.
-
-No firmware source code is included in the repository at this stage.
+After startup, the ESP32 establishes serial communication with BaseCam, continuously reads the three analog joystick channels, converts them into Roll/Pitch/Yaw commands and sends the control values through the BaseCam Serial API. The modified source code will be published later.
 
 ---
 
-## 6. Bluetooth Low Energy control — two ESP32-S3 boards
+## 5. Bluetooth Low Energy control — two ESP32-S3 boards
 
-The wireless version separates the user controls from the gimbal electronics.
+In the wireless version, the first ESP32-S3 is used as the handheld controller. It reads the three joysticks and transmits Roll/Pitch/Yaw values over **Bluetooth Low Energy (BLE)**. A second ESP32-S3 mounted on the gimbal receives the values and forwards commands to BaseCam through UART / Serial API.
 
-### Controller ESP32-S3
+![BLE ESP32-S3 to BaseCam wiring](https://content.instructables.com/FMB/SVXN/LZCPU8N6/FMBSVXNLZCPU8N6.png)
 
-The first ESP32-S3 is located in the handheld controller. It reads the three joystick channels and converts them into Roll, Pitch and Yaw control values. These values are transmitted wirelessly over **Bluetooth Low Energy (BLE)**.
-
-The handheld controller can be powered from a suitable 5 V USB source or battery-powered supply.
-
-### Gimbal ESP32-S3
-
-The second ESP32-S3 is installed on the gimbal and acts as the BLE receiver. It receives the three control values, validates/parses them and forwards the corresponding control commands to the BaseCam controller through UART and the Serial API.
-
-The BaseCam-to-CAN motor wiring remains essentially the same as in the direct configuration. The main difference is that the joystick connections are moved from the gimbal-side ESP32 to the handheld ESP32.
-
-### BLE data flow
+Data path:
 
 `Joysticks → Controller ESP32-S3 → BLE → Gimbal ESP32-S3 → UART / Serial API → BaseCam → CAN → Motor Drivers`
 
-The final modified firmware will later add the exact BLE service/characteristic definition, packet format, connection recovery and failsafe behavior.
+The BaseCam/CAN side remains essentially the same as in the direct version; only the joystick inputs move to the remote ESP32.
+
+![BaseCam controller reference installation](https://content.instructables.com/FML/2Q7Y/LZCPU6DU/FML2Q7YLZCPU6DU.jpg)
 
 ---
 
-## 7. Speed and angle control modes
-
-The system can operate using two different joystick interpretations.
+## 6. Angle and Speed control modes
 
 ### Angle mode
 
-In **Angle** mode, joystick input commands a target angular position. Moving the joystick changes the requested Roll, Pitch or Yaw angle; the BaseCam stabilization system drives the corresponding axis toward that target.
-
-This mode is useful when the operator wants direct positional control and expects the gimbal to hold the commanded orientation after the control input returns to its neutral behavior, depending on the configured RC settings.
+Joystick input represents a requested angular position. BaseCam moves the selected Roll, Pitch or Yaw axis toward the commanded position. This mode is suitable for direct positional control.
 
 ### Speed mode
 
-In **Speed** mode, joystick displacement commands rotational speed rather than an absolute angle. The farther the joystick is moved from center, the faster the selected axis rotates. Returning the joystick to the neutral region commands approximately zero rotation.
+Joystick displacement represents requested rotational speed. A larger displacement commands faster movement; returning the joystick to its neutral region commands approximately zero rotation. This mode is useful for smooth panning and continuous camera movement.
 
-This mode is convenient for smooth camera panning and continuous manual movement.
-
-The selected mode must be consistent between the SimpleBGC configuration and the firmware implementation. Dead-band/dead-zone settings can be used to prevent small ADC variations around joystick center from causing unwanted motion. BaseCam's motor-coordinate/servo-related options can also affect how commands are interpreted and should be configured for the specific mechanical system.
+The selected mode must be consistent between the SimpleBGC configuration and the future ESP32 firmware. A dead-band/dead-zone should be used to suppress small ADC variations around joystick center.
 
 ---
 
-## 8. Firmware status
+## 7. General recommendations
 
-The original open-source implementation demonstrates both direct and BLE control, but **its source code is not being republished here unchanged**.
-
-The firmware for this repository will be published after it has been modified for the GEC Engineering hardware configuration and reviewed/tested. Planned work includes a defined pin map, joystick calibration, filtering/dead-zone handling, BLE connection management, failsafe behavior and clearer configuration of operating modes.
+Verify board revision, connector pinout, CAN polarity, supply voltage and CAN IDs before applying motor power. Perform initial configuration with motors disabled, keep a backup of a known-good SimpleBGC profile, use twisted CAN wiring with appropriate termination, and implement a communication failsafe for BLE operation.
 
 ---
 
-## 9. General recommendations
+## Open-source acknowledgment
 
-- Verify every connector pinout with the documentation for the exact board revision.
-- Check power polarity before connecting the battery or external DC supply.
-- Configure and test the controller with motors disabled before the first powered motor test.
-- Confirm unique CAN IDs and correct CAN_H/CAN_L wiring before enabling the motor drivers.
-- Use twisted CAN_H/CAN_L wiring and appropriate CAN termination for the final harness.
-- Secure the gimbal mechanically before motor calibration.
-- Start testing with conservative motor power/current settings.
-- Verify joystick center values and dead zone before allowing full-range motion.
-- In the wireless version, implement a failsafe so loss of BLE communication cannot leave a non-zero movement command active.
-- Keep a known-good BaseCam configuration backup before changing firmware or motor parameters.
-
----
-
-## 10. Open-source acknowledgment
-
-The ESP32 control concept and initial software approach used as a development reference for this project are based in part on **ESP32 + BaseCam Bluetooth Gimbal Control** by **Austin Allen / Elation Sports Technologies LLC**, released under the MIT License.
-
-Original project:
-https://www.hackster.io/ElationSportsTechnologies/esp32-basecam-bluetooth-gimbal-control-6ec7af
-
-Original repository:
-https://github.com/TheESTest/BaseCam-ESP32-Controller
-
-BaseCam / SimpleBGC is a product ecosystem of BaseCam Electronics. Official BaseCam documentation should be used as the primary reference for controller firmware, GUI operation and CAN module procedures.
-
-This repository documents the GEC Engineering integration, hardware-specific adaptation and subsequent firmware development. See [ATTRIBUTION.md](ATTRIBUTION.md) for details.
+The ESP32 control concept and initial software approach used as a development reference are based in part on **ESP32 + BaseCam Bluetooth Gimbal Control** by **Austin Allen / Elation Sports Technologies LLC**, released under the MIT License. This repository documents the GEC Engineering integration and subsequent modification work. See [ATTRIBUTION.md](ATTRIBUTION.md) for details.
